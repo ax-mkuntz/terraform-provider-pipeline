@@ -145,7 +145,7 @@ func pipelineProjectIntegrationResource() *schema.Resource {
 		return formJSONValues
 	}
 
-	var lookupFormJsonValue = func(values []FormJSONValues, key string) FormJSONValues {
+	var lookupFormJSONValue = func(values []FormJSONValues, key string) FormJSONValues {
 		for _, value := range values {
 			if value.Label == key {
 				return value
@@ -168,7 +168,7 @@ func pipelineProjectIntegrationResource() *schema.Resource {
 			// the API will always return the redacted value. Putting this into tf-state will cause a diff every time
 			// as it tries to correct "***" -> "secret_val".
 			if idx.Value == "********" {
-				lookup := lookupFormJsonValue(existingValues, idx.Label)
+				lookup := lookupFormJSONValue(existingValues, idx.Label)
 
 				if lookup.Value != "" {
 					tflog.Debug(ctx, "over-writing key value with existing data value", map[string]interface{}{
