@@ -30,8 +30,13 @@ type ProjectIntegration struct {
 }
 
 type FormJSONValues struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
+	Label     string `json:"label"`
+	Value     string `json:"value"`
+	Sensitive bool
+}
+
+func (f FormJSONValues) Id() string {
+	return f.Label
 }
 
 type ProjectJSON struct {
@@ -40,7 +45,6 @@ type ProjectJSON struct {
 }
 
 const projectIntegrationsUrl = "pipelines/api/v1/projectintegrations"
-const redactedSecretValue = "********"
 
 func pipelineProjectIntegrationResource() *schema.Resource {
 
@@ -92,6 +96,11 @@ func pipelineProjectIntegrationResource() *schema.Resource {
 						Type:        schema.TypeString,
 						Required:    true,
 						Description: "Value of the input property.",
+					},
+					"is_sensitive": {
+						Type:        schema.TypeBool,
+						Optional:    true,
+						Description: "Is the underlying Value sensitive or not",
 					},
 				},
 			},
@@ -256,22 +265,15 @@ func pipelineProjectIntegrationResource() *schema.Resource {
 	}
 }
 
-func lookupFormJSONValue(values []FormJSONValues, key string) FormJSONValues {
-	for _, value := range values {
-		if value.Label == key {
-			return value
-		}
-	}
-	return FormJSONValues{}
-}
 func unpackFormJSONValues(d *util.ResourceData, key string) []FormJSONValues {
 	var formJSONValues []FormJSONValues
 	keyValues := d.Get(key).([]interface{})
 	for _, keyValue := range keyValues {
 		idx := keyValue.(map[string]interface{})
 		formJSONValue := FormJSONValues{
-			Label: idx["label"].(string),
-			Value: idx["value"].(string),
+			Label:     idx["label"].(string),
+			Value:     idx["value"].(string),
+			Sensitive: idx["is_sensitive"].(bool),
 		}
 		formJSONValues = append(formJSONValues, formJSONValue)
 	}
@@ -284,23 +286,20 @@ func packFormJSONValues(ctx context.Context, d *schema.ResourceData, schemaKey s
 
 	for _, idx := range formJSONValues {
 		keyValue := map[string]interface{}{
-			"label": idx.Label,
-			"value": idx.Value,
+			"label":        idx.Label,
+			"value":        idx.Value,
+			"is_sensitive": idx.Sensitive,
 		}
 
+		lookup := FindConfigurationById(existingValues, idx.Label)
 		// the API will always return the redacted value. Putting this into tf-state will cause a diff every time
 		// as it tries to correct "***" -> "secret_val".
-		if idx.Value == redactedSecretValue {
-			lookup := lookupFormJSONValue(existingValues, idx.Label)
-
+		if lookup != nil && lookup.Sensitive {
 			if lookup.Value != "" {
-				tflog.Debug(ctx, "over-writing key value with existing data value", map[string]interface{}{
-					"label":    idx.Label,
-					"value":    idx.Value,
-					"override": lookup.Value,
-				})
 				keyValue["value"] = lookup.Value
 			}
+			//the incoming `idx` value will always be false, the JFrog API has no concept of this field
+			keyValue["is_sensitive"] = true
 		}
 
 		tflog.Debug(ctx, "packFormJSONValues", keyValue)
